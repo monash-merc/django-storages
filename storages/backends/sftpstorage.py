@@ -56,42 +56,59 @@ import stat
 from datetime import datetime
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import File
 
 from storages.compat import urlparse, BytesIO, Storage
 
 
 class SFTPStorage(Storage):
+    """
+    http://docs.paramiko.org/en/1.16/api/client.html#paramiko.client.SSHClient.connect
+    """
+    host = getattr(settings, 'SFTP_STORAGE_HOST', None)
 
-    def __init__(self):
-        self._host = settings.SFTP_STORAGE_HOST
+    # if present, settings.SFTP_STORAGE_PARAMS should be a dict with params
+    # matching the keyword arguments to paramiko.SSHClient().connect().  So
+    # you can put username/password there.  Or you can omit all that if
+    # you're using keys.
+    params = getattr(settings, 'SFTP_STORAGE_PARAMS', {})
 
-        # if present, settings.SFTP_STORAGE_PARAMS should be a dict with params
-        # matching the keyword arguments to paramiko.SSHClient().connect().  So
-        # you can put username/password there.  Or you can omit all that if
-        # you're using keys.
-        self._params = getattr(settings, 'SFTP_STORAGE_PARAMS', {})
-        self._interactive = getattr(settings, 'SFTP_STORAGE_INTERACTIVE',
-                                    False)
-        self._file_mode = getattr(settings, 'SFTP_STORAGE_FILE_MODE', None)
-        self._dir_mode = getattr(settings, 'SFTP_STORAGE_DIR_MODE', None)
+    interactive = getattr(settings, 'SFTP_STORAGE_INTERACTIVE', False)
+    file_mode = getattr(settings, 'SFTP_STORAGE_FILE_MODE', None)
+    dir_mode = getattr(settings, 'SFTP_STORAGE_DIR_MODE', None)
+    uid = getattr(settings, 'SFTP_STORAGE_UID', None)
+    gid = getattr(settings, 'SFTP_STORAGE_GID', None)
+    known_host_file = getattr(settings, 'SFTP_KNOWN_HOST_FILE', None)
+    root_path = settings.SFTP_STORAGE_ROOT
+    base_url = settings.MEDIA_URL
 
-        self._uid = getattr(settings, 'SFTP_STORAGE_UID', None)
-        self._gid = getattr(settings, 'SFTP_STORAGE_GID', None)
-        self._known_host_file = getattr(settings, 'SFTP_KNOWN_HOST_FILE', None)
+    # for now it's all posix paths.  Maybe someday we'll support figuring
+    # out if the remote host is windows.
+    _pathmod = posixpath
 
-        self._root_path = settings.SFTP_STORAGE_ROOT
-        self._base_url = settings.MEDIA_URL
+    def __init__(self, **settings):
+        """
 
-        # for now it's all posix paths.  Maybe someday we'll support figuring
-        # out if the remote host is windows.
-        self._pathmod = posixpath
+        :param kwargs:
+        :return:
+        """
+        for name, value in settings.items():
+            if hasattr(self, name):
+                setattr(self, name, value)
+
+        if self.host is None:
+            raise ImproperlyConfigured('host setting missing for SFTP storage')
+
+        if self.root_path is None:
+            raise ImproperlyConfigured(
+                'root_path setting missing for SFTP storage')
 
     def _connect(self):
         self._ssh = paramiko.SSHClient()
 
-        if self._known_host_file is not None:
-            self._ssh.load_host_keys(self._known_host_file)
+        if self.known_host_file is not None:
+            self._ssh.load_host_keys(self.known_host_file)
         else:
             # automatically add host keys from current user.
             self._ssh.load_host_keys(os.path.expanduser(os.path.join("~", ".ssh", "known_hosts")))
@@ -100,15 +117,15 @@ class SFTPStorage(Storage):
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         try:
-            self._ssh.connect(self._host, **self._params)
+            self._ssh.connect(self.host, **self.params)
         except paramiko.AuthenticationException as e:
-            if self._interactive and 'password' not in self._params:
+            if self.interactive and 'password' not in self.params:
                 # If authentication has failed, and we haven't already tried
                 # username/password, and configuration allows it, then try
                 # again with username/password.
-                if 'username' not in self._params:
-                    self._params['username'] = getpass.getuser()
-                self._params['password'] = getpass.getpass()
+                if 'username' not in self.params:
+                    self.params['username'] = getpass.getuser()
+                self.params['password'] = getpass.getpass()
                 self._connect()
             else:
                 raise paramiko.AuthenticationException(e)
@@ -130,7 +147,7 @@ class SFTPStorage(Storage):
         return self._pathmod.join(*args)
 
     def _remote_path(self, name):
-        return self._join(self._root_path, name)
+        return self._join(self.root_path, name)
 
     def _open(self, name, mode='rb'):
         return SFTPStorageFile(name, self, mode)
@@ -157,11 +174,11 @@ class SFTPStorage(Storage):
             self._mkdir(parent)
         self.sftp.mkdir(path)
 
-        if self._dir_mode is not None:
-            self.sftp.chmod(path, self._dir_mode)
+        if self.dir_mode is not None:
+            self.sftp.chmod(path, self.dir_mode)
 
-        if self._uid or self._gid:
-            self._chown(path, uid=self._uid, gid=self._gid)
+        if self.uid or self.gid:
+            self._chown(path, uid=self.uid, gid=self.gid)
 
     def _save(self, name, content):
         """Save file via SFTP."""
@@ -176,10 +193,10 @@ class SFTPStorage(Storage):
         f.close()
 
         # set file permissions if configured
-        if self._file_mode is not None:
-            self.sftp.chmod(path, self._file_mode)
-        if self._uid or self._gid:
-            self._chown(path, uid=self._uid, gid=self._gid)
+        if self.file_mode is not None:
+            self.sftp.chmod(path, self.file_mode)
+        if self.uid or self.gid:
+            self._chown(path, uid=self.uid, gid=self.gid)
         return name
 
     def delete(self, name):
@@ -227,9 +244,9 @@ class SFTPStorage(Storage):
         return datetime.fromtimestamp(utime)
 
     def url(self, name):
-        if self._base_url is None:
+        if self.base_url is None:
             raise ValueError("This file is not accessible via a URL.")
-        return urlparse.urljoin(self._base_url, name).replace('\\', '/')
+        return urlparse.urljoin(self.base_url, name).replace('\\', '/')
 
 
 class SFTPStorageFile(File):
