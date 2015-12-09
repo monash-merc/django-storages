@@ -80,7 +80,7 @@ class SFTPStorage(Storage):
     uid = getattr(settings, 'SFTP_STORAGE_UID', None)
     gid = getattr(settings, 'SFTP_STORAGE_GID', None)
     known_host_file = getattr(settings, 'SFTP_KNOWN_HOST_FILE', None)
-    root_path = settings.SFTP_STORAGE_ROOT
+    root_path = getattr(settings, 'SFTP_STORAGE_ROOT', None)
     base_url = settings.MEDIA_URL
 
     # for now it's all posix paths.  Maybe someday we'll support figuring
@@ -96,6 +96,8 @@ class SFTPStorage(Storage):
         for name, value in settings.items():
             if hasattr(self, name):
                 setattr(self, name, value)
+            else:
+                self.params[name] = value
 
         if self.host is None:
             raise ImproperlyConfigured('host setting missing for SFTP storage')
