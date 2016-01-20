@@ -5,6 +5,8 @@ from datetime import datetime
 from gzip import GzipFile
 from tempfile import SpooledTemporaryFile
 
+import math
+from filechunkio import FileChunkIO
 from django.core.files.base import File
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.utils.encoding import force_text, smart_str, filepath_to_uri, force_bytes
@@ -141,7 +143,10 @@ class S3BotoStorageFile(File):
             upload_headers = {
                 provider.acl_header: self._storage.default_acl
             }
-            upload_headers.update({'Content-Type': mimetypes.guess_type(self.key.name)[0] or self._storage.key_class.DefaultContentType})
+            upload_headers.update({'Content-Type': getattr(
+                content, 'content_type',
+                mimetypes.guess_type(self.key.name)[0] or
+                self._storage.key_class.DefaultContentType)})
             upload_headers.update(self._storage.headers)
             self._multipart = self._storage.bucket.initiate_multipart_upload(
                 self.key.name,
@@ -389,6 +394,10 @@ class S3BotoStorage(Storage):
     def _save(self, name, content):
         cleaned_name = self._clean_name(name)
         name = self._normalize_name(cleaned_name)
+        try:
+            content_size = len(content)
+        except TypeError:  # iterators may not have a length
+            content_size = None
         headers = self.headers.copy()
         _type, encoding = mimetypes.guess_type(name)
         content_type = getattr(content, 'content_type',
@@ -414,7 +423,12 @@ class S3BotoStorage(Storage):
             key.last_modified = datetime.utcnow().strftime(ISO8601)
 
         key.set_metadata('Content-Type', content_type)
-        self._save_content(key, content, headers=headers)
+
+        # single part upload for small files of known size
+        if content_size is None or content_size > S3BotoStorageFile.buffer_size:
+            self._save_multipart(key, content, headers=headers)
+        else:
+            self._save_content(key, content, headers=headers)
         return cleaned_name
 
     def _save_content(self, key, content, headers):
@@ -426,6 +440,52 @@ class S3BotoStorage(Storage):
                                    policy=self.default_acl,
                                    reduced_redundancy=self.reduced_redundancy,
                                    rewind=True, **kwargs)
+
+    def _save_multipart(self, key, content, headers):
+        """
+        Uploads larger files as multi part upload.
+        The chunk size is increased to reduce memory footprint as much as possible
+        while staying under the 10000 parts limit and support file sizes up to the
+        5 TB limit.
+
+        :param key:
+        :param content:
+        :param headers:
+        :return:
+        """
+        kwargs = {'headers': headers,
+                  'reduced_redundancy': self.reduced_redundancy}
+
+        if self.encryption:
+            kwargs['encrypt_key'] = self.encryption
+
+        multipart = self.bucket.initiate_multipart_upload(
+            key.name,
+            **kwargs
+        )
+
+        part_step = 100
+        chunk_multiplier = 1.1
+        chunk_size = 5242880  # 5 MB chunk to start with
+        total_parts = 1
+
+        try:
+            while True:
+                content_read = content.read(chunk_size)
+                if len(content_read) == 0:
+                    break
+                content_wrapped = BytesIO(content_read)
+                multipart.upload_part_from_file(content_wrapped, part_num=total_parts)
+
+                total_parts += 1
+                if total_parts > 10000:
+                    raise Exception("multipart S3 upload, too many parts")
+                if total_parts % part_step == 0:
+                    chunk_size = int(chunk_multiplier * chunk_size)
+            multipart.complete_upload()
+        except Exception as e:
+            multipart.cancel_upload()
+            raise e
 
     def delete(self, name):
         name = self._normalize_name(self._clean_name(name))
