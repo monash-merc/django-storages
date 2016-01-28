@@ -54,6 +54,11 @@ import paramiko
 import posixpath
 import stat
 from datetime import datetime
+from paramiko.dsskey import DSSKey
+from paramiko.ecdsakey import ECDSAKey
+from paramiko.rsakey import RSAKey
+from paramiko.ssh_exception import SSHException
+from six.StringIO import StringIO
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -82,6 +87,9 @@ class SFTPStorage(Storage):
     known_host_file = getattr(settings, 'SFTP_KNOWN_HOST_FILE', None)
     root_path = getattr(settings, 'SFTP_STORAGE_ROOT', None)
     base_url = settings.MEDIA_URL
+
+    private_key_string = getattr(settings, 'SFTP_STORAGE_PKEY_STRING', None)
+    private_key_password = getattr(settings, 'SFTP_STORAGE_PKEY_PW', None)
 
     # for now it's all posix paths.  Maybe someday we'll support figuring
     # out if the remote host is windows.
@@ -117,6 +125,20 @@ class SFTPStorage(Storage):
 
         # and automatically add new host keys for hosts we haven't seen before.
         self._ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # if key is set as string instead of PKey in params, convert here
+        if 'pkey' not in self.params and self.private_key_string is not None:
+            saved_exception = None
+            for pkey_class in (RSAKey, DSSKey, ECDSAKey):
+                try:
+                    self.params['pkey'] = pkey_class.from_private_key(
+                        StringIO(self.private_key_string),
+                        password=self.private_key_password)
+                    break
+                except SSHException as e:
+                    saved_exception = e
+            if saved_exception is not None:
+                raise saved_exception
 
         try:
             self._ssh.connect(self.host, **self.params)
