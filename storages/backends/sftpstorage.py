@@ -58,7 +58,7 @@ from paramiko.dsskey import DSSKey
 from paramiko.ecdsakey import ECDSAKey
 from paramiko.rsakey import RSAKey
 from paramiko.ssh_exception import SSHException
-from six.StringIO import StringIO
+from six import StringIO
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
