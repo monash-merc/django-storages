@@ -22,14 +22,30 @@ except ImportError:
 class LibCloudStorage(Storage):
     """Django storage derived class using apache libcloud to operate
     on supported providers"""
-    def __init__(self, provider_name=None, option=None):
-        if provider_name is None:
-            provider_name = getattr(settings, 'DEFAULT_LIBCLOUD_PROVIDER', 'default')
 
-        self.provider = settings.LIBCLOUD_PROVIDERS.get(provider_name)
+    def __init__(self, provider_name=None, provider=None,
+                 cloud_type=None, user=None, key=None, bucket=None, region=None):
+        if provider_name is None and provider is None:
+            provider_name = getattr(settings, 'DEFAULT_LIBCLOUD_PROVIDER',
+                                    'default')
+        if provider_name is not None:
+            self.provider = settings.LIBCLOUD_PROVIDERS.get(provider_name)
+        elif provider is not None:
+            self.provider = provider
+        elif None not in (cloud_type, user, key):
+            self.provider = {
+                'type': cloud_type,
+                'user': user,
+                'key': key,
+            }
+            if bucket is not None:
+                self.provider['bucket'] = bucket
+            if region is not None:
+                self.provider['region'] = region
+
         if not self.provider:
             raise ImproperlyConfigured(
-                'LIBCLOUD_PROVIDERS %s not defined or invalid' % provider_name)
+                'LIBCLOUD_PROVIDERS %s not defined or invalid, or custom provider not specified' % provider_name)
         extra_kwargs = {}
         if 'region' in self.provider:
             extra_kwargs['region'] = self.provider['region']
