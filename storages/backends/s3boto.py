@@ -108,19 +108,20 @@ class S3BotoStorageFile(File):
         return self.key.size
 
     def _get_file(self):
-        if self._file is None:
-            self._file = SpooledTemporaryFile(
-                max_size=self._storage.max_memory_size,
-                suffix=".S3BotoStorageFile",
-                dir=setting("FILE_UPLOAD_TEMP_DIR", None)
-            )
-            if 'r' in self._mode:
-                self._is_dirty = False
-                self.key.get_contents_to_file(self._file)
-                self._file.seek(0)
-            if self._storage.gzip and self.key.content_encoding == 'gzip':
-                self._file = GzipFile(mode=self._mode, fileobj=self._file)
-        return self._file
+        return self
+        # if self._file is None:
+        #     self._file = SpooledTemporaryFile(
+        #         max_size=self._storage.max_memory_size,
+        #         suffix=".S3BotoStorageFile",
+        #         dir=setting("FILE_UPLOAD_TEMP_DIR", None)
+        #     )
+        #     if 'r' in self._mode:
+        #         self._is_dirty = False
+        #         self.key.get_contents_to_file(self._file)
+        #         self._file.seek(0)
+        #     if self._storage.gzip and self.key.content_encoding == 'gzip':
+        #         self._file = GzipFile(mode=self._mode, fileobj=self._file)
+        # return self._file
 
     def _set_file(self, value):
         self._file = value
@@ -130,7 +131,8 @@ class S3BotoStorageFile(File):
     def read(self, *args, **kwargs):
         if 'r' not in self._mode:
             raise AttributeError("File was not opened in read mode.")
-        return super(S3BotoStorageFile, self).read(*args, **kwargs)
+        return self.key.read(*args, **kwargs)
+        # return super(S3BotoStorageFile, self).read(*args, **kwargs)
 
     def write(self, content, *args, **kwargs):
         if 'w' not in self._mode:
