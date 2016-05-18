@@ -76,7 +76,7 @@ class KeyFile(object):
         if size == 0:
             size = None
         self.key.resp = None
-        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (self.pos, str(size) or '')})
+        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (self.pos, str(size-1) or '')})
         self.pos += size or 0
         return self.key.read()
 
