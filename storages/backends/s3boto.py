@@ -62,6 +62,25 @@ def safe_join(base, *paths):
     return final_path.lstrip('/')
 
 
+class KeyFile(object):
+
+    def __init__(self, key):
+        self.key = key
+        self.pos = 0
+
+    def read(self, size=0):
+        if size == 0:
+            size = None
+        self.key.resp = None
+        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (self.pos, str(size) or '')})
+        self.pos += size or 0
+        return self.key.read()
+
+    def seek(self, pos=0):
+        self.pos = pos
+        return
+
+
 @deconstructible
 class S3BotoStorageFile(File):
     """
@@ -108,20 +127,18 @@ class S3BotoStorageFile(File):
         return self.key.size
 
     def _get_file(self):
-        return self.key
-        # if self._file is None:
-        #     self._file = SpooledTemporaryFile(
-        #         max_size=self._storage.max_memory_size,
-        #         suffix=".S3BotoStorageFile",
-        #         dir=setting("FILE_UPLOAD_TEMP_DIR", None)
-        #     )
-        #     if 'r' in self._mode:
-        #         self._is_dirty = False
-        #         self.key.get_contents_to_file(self._file)
-        #         self._file.seek(0)
-        #     if self._storage.gzip and self.key.content_encoding == 'gzip':
-        #         self._file = GzipFile(mode=self._mode, fileobj=self._file)
-        # return self._file
+        if self._file is None:
+            if 'r' in self._mode:
+                self._file = KeyFile(self.key)
+            else:
+                self._file = SpooledTemporaryFile(
+                    max_size=self._storage.max_memory_size,
+                    suffix=".S3BotoStorageFile",
+                    dir=setting("FILE_UPLOAD_TEMP_DIR", None)
+                )
+                if self._storage.gzip and self.key.content_encoding == 'gzip':
+                    self._file = GzipFile(mode=self._mode, fileobj=self._file)
+        return self._file
 
     def _set_file(self, value):
         self._file = value
