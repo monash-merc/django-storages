@@ -63,10 +63,14 @@ def safe_join(base, *paths):
 
 
 class KeyFile(object):
+    """
+    direct reading from the network
+    """
 
     def __init__(self, key):
         self.key = key
         self.pos = 0
+        self.closed = False
 
     def read(self, size=0):
         if size == 0:
