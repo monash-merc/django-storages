@@ -5,8 +5,6 @@ from datetime import datetime
 from gzip import GzipFile
 from tempfile import SpooledTemporaryFile
 
-import math
-from filechunkio import FileChunkIO
 from django.core.files.base import File
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.utils.encoding import force_text, smart_str, filepath_to_uri, force_bytes
