@@ -73,11 +73,14 @@ class KeyFile(object):
         self.closed = False
 
     def read(self, size=0):
-        if size == 0:
-            size = None
         self.key.resp = None
-        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (self.pos, str(size-1) or '')})
-        self.pos += size or 0
+        end = self.pos + size
+        if size == 0:
+            end_str = ''
+        else:
+            end_str = str(end - 1)
+        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (self.pos, end_str)})
+        self.pos += end
         return self.key.read()
 
     def seek(self, pos=0):
