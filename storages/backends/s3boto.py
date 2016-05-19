@@ -67,21 +67,44 @@ class KeyFile(object):
     direct reading from the network
     """
 
+    buffer_size = 32 * 1024 * 1024
+
     def __init__(self, key):
         self.key = key
         self.pos = 0
         self.closed = False
+        self._buffer = BytesIO()
+        self._buffer_range = xrange(0, 0)
 
-    def read(self, size=0):
+    def _direct_read(self, pos, size=0):
         self.key.resp = None
-        end = self.pos + size
+        end = pos + size
         if size == 0:
             end_str = ''
         else:
             end_str = str(end - 1)
-        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (self.pos, end_str)})
-        self.pos += end
-        return self.key.read()
+        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos, end_str)})
+        return self.key.read(size)
+
+    def _fill_buffer(self, pos):
+        self.key.resp = None
+        end = pos + KeyFile.buffer_size
+        end_str = str(end - 1)
+        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos, end_str)})
+        self._buffer = BytesIO(self._direct_read(pos, KeyFile.buffer_size))
+        self._buffer_range = xrange(pos, end)
+
+    def read(self, size=0):
+        pos = self.pos
+        end = pos + size
+        self.pos = end
+        if size != 0 and self.pos in self._buffer_range and end in self._buffer_range:
+            self._buffer.seek(pos - self._buffer_range[0])
+            return self._buffer.read(size)
+        if size < KeyFile.buffer_size:
+            self._fill_buffer(pos)
+            return self._buffer.read(size)
+        return self._direct_read(pos, size)
 
     def seek(self, pos=0):
         self.pos = pos
