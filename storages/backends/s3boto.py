@@ -92,7 +92,7 @@ class KeyFile(object):
         end_str = str(end - 1)
         self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos, end_str)})
         self._buffer = BytesIO(self._direct_read(pos, KeyFile.buffer_size))
-        self._buffer_range = xrange(pos, end)
+        self._buffer_range_start, self._buffer_range_end = pos, end
 
     def read(self, size=0):
         pos = self.pos
