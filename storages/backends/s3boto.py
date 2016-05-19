@@ -102,7 +102,7 @@ class KeyFile(object):
             self._buffer_range_start <= pos < self._buffer_range_end and
             self._buffer_range_start < end <= self._buffer_range_end
         ):
-            self._buffer.seek(pos - self._buffer_range[0])
+            self._buffer.seek(pos - self._buffer_range_start)
             return self._buffer.read(size)
         if size < KeyFile.buffer_size:
             self._fill_buffer(pos)
