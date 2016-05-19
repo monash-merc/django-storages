@@ -5,6 +5,7 @@ from datetime import datetime
 from gzip import GzipFile
 from tempfile import SpooledTemporaryFile
 
+import boto
 from django.core.files.base import File
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.utils.encoding import force_text, smart_str, filepath_to_uri, force_bytes
@@ -27,6 +28,15 @@ boto_version_info = tuple([int(i) for i in boto_version.split('-')[0].split('.')
 if boto_version_info[:2] < (2, 32):
     raise ImproperlyConfigured("The installed Boto library must be 2.32 or "
                                "higher.\nSee https://github.com/boto/boto")
+
+try:
+    import gevent.monkey
+    gevent.monkey.patch_all()
+    import gevent
+    import gevent.pool
+    gevent_available = True
+except ImportError:
+    gevent_available = False
 
 
 def safe_join(base, *paths):
@@ -294,6 +304,8 @@ class S3BotoStorage(Storage):
     # rolled over into a temporary file on disk. Default is 0: Do not roll over.
     max_memory_size = setting('AWS_S3_MAX_MEMORY_SIZE', 0)
 
+    concurrency = setting('AWS_S3_CONCURRENT_UPLOADS', 1)
+
     def __init__(self, acl=None, bucket=None, **settings):
         # check if some of the settings we've provided as class attributes
         # need to be overwritten with values passed in here
@@ -518,19 +530,49 @@ class S3BotoStorage(Storage):
         chunk_size = 5242880  # 5 MB chunk to start with
         total_parts = 1
 
+        use_gevent = False
+        if self.concurrency > 1 and gevent_available:
+            pool = gevent.pool.Pool(self.concurrency)
+            use_gevent = True
+            greenlets = []
+
+            def _partlet(mp, content, part_num):
+                success = False
+                for x in xrange(3):
+                    try:
+                        conn = self.connection
+                        bucket = conn.lookup(mp.bucket_name)
+
+                        p = boto.s3.multipart.MultiPartUpload(bucket)
+                        p.id = mp.id
+                        p.key_name = mp.key_name
+
+                        p.upload_part_from_file(BytesIO(content), part_num=part_num, replace=True)
+                        success = True
+                        break
+                    except Exception as part_error:
+                        print "Error in multipart part, %s" % str(part_error)
+
+                assert success, "Part failed, %d" % part_num
+
         try:
             while True:
                 content_read = content.read(chunk_size)
                 if len(content_read) == 0:
                     break
                 content_wrapped = BytesIO(content_read)
-                multipart.upload_part_from_file(content_wrapped, part_num=total_parts)
+                if use_gevent:
+                    greenlets.append(
+                        pool.spawn(_partlet, multipart, content_wrapped, total_parts))
+                else:
+                    multipart.upload_part_from_file(content_wrapped, part_num=total_parts)
 
                 total_parts += 1
                 if total_parts > 10000:
                     raise Exception("multipart S3 upload, too many parts")
                 if total_parts % part_step == 0:
                     chunk_size = int(chunk_multiplier * chunk_size)
+            gevent.joinall(greenlets)
             multipart.complete_upload()
         except Exception as e:
             multipart.cancel_upload()
