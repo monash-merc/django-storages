@@ -74,7 +74,7 @@ class KeyFile(object):
         self.pos = 0
         self.closed = False
         self._buffer = BytesIO()
-        self._buffer_range = xrange(0, 0)
+        self._buffer_range_start, self._buffer_range_end = 0, 0
 
     def _direct_read(self, pos, size=0):
         self.key.resp = None
@@ -98,7 +98,10 @@ class KeyFile(object):
         pos = self.pos
         end = pos + size
         self.pos = end
-        if size != 0 and self.pos in self._buffer_range and end in self._buffer_range:
+        if size != 0 and (
+            self._buffer_range_start <= pos < self._buffer_range_end and
+            self._buffer_range_start < end <= self._buffer_range_end
+        ):
             self._buffer.seek(pos - self._buffer_range[0])
             return self._buffer.read(size)
         if size < KeyFile.buffer_size:
