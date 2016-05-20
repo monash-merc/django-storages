@@ -102,13 +102,14 @@ class KeyFile(object):
         self.pos = end
         buf_start = pos - self._buffer_start
         buf_end = end - self._buffer_start
-        if size != 0 and (
-            0 <= buf_start < KeyFile.buffer_size and
-            0 < buf_end <= KeyFile.buffer_size
-        ):
-            return self._buffer[buf_start:buf_end]
         if 0 < size < KeyFile.buffer_size:
-            self._fill_buffer(pos)
+            if not (
+                0 <= buf_start < KeyFile.buffer_size and
+                0 < buf_end <= KeyFile.buffer_size
+            ) or self._buffer is None:
+                self._fill_buffer(pos)
+                buf_start = pos - self._buffer_start
+                buf_end = end - self._buffer_start
             return self._buffer[buf_start:buf_end]
         return self._direct_read(pos, size)
 
