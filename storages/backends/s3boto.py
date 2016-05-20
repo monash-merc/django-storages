@@ -114,6 +114,9 @@ class KeyFile(object):
         self.pos = pos
         return
 
+    def close(self):
+        self.key.close()
+
 
 @deconstructible
 class S3BotoStorageFile(File):
@@ -303,6 +306,8 @@ class S3BotoStorage(Storage):
         for name, value in settings.items():
             if hasattr(self, name):
                 setattr(self, name, value)
+
+        self.concurrency = int(self.concurrency)
 
         # For backward-compatibility of old differing parameter names
         if acl is not None:
@@ -521,7 +526,6 @@ class S3BotoStorage(Storage):
         chunk_size = 5242880  # 5 MB chunk to start with
         total_parts = 1
 
-        use_gevent = False
         if self.concurrency > 1:
             pool = ThreadPool(processes=self.concurrency)
 
@@ -545,7 +549,7 @@ class S3BotoStorage(Storage):
                     break
                 content_wrapped = BytesIO(content_read)
                 if self.concurrency > 1:
-                    pool.apply_async(_partlet, content_wrapped, total_parts)
+                    pool.apply_async(_part_upload, content_wrapped, total_parts)
                 else:
                     multipart.upload_part_from_file(content_wrapped, part_num=total_parts)
 
