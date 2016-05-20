@@ -102,19 +102,19 @@ class KeyFile(object):
         self.pos = end
         buf_start = pos - self._buffer_start
         buf_end = end - self._buffer_start
-        if 0 < size < KeyFile.buffer_size:
-            if not (
-                0 <= buf_start < KeyFile.buffer_size and
-                0 < buf_end <= KeyFile.buffer_size
-            ) or self._buffer is None:
-                self._fill_buffer(pos)
-                buf_start = pos - self._buffer_start
-                buf_end = end - self._buffer_start
+        try:
             return self._buffer[buf_start:buf_end]
+        except IndexError:
+            pass
+        if 0 < size < KeyFile.buffer_size:
+            self._fill_buffer(pos)
+            return self._buffer[0:size]
         return self._direct_read(pos, size)
 
     def seek(self, pos=0):
         self.pos = pos
+        if not (self._buffer_start < pos < self._buffer_start + KeyFile.buffer_size):
+            self._fill_buffer(pos)
         return
 
     def close(self):
