@@ -93,8 +93,6 @@ class KeyFile(object):
     def _fill_buffer(self, pos):
         self.key.resp = None
         end = pos + KeyFile.buffer_size
-        end_str = str(end - 1)
-        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos, end_str)})
         self._buffer = self._direct_read(pos, KeyFile.buffer_size)
         self._buffer_start = pos
 
