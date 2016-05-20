@@ -94,14 +94,14 @@ class KeyFile(object):
         end_str = str(end - 1)
         self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos, end_str)})
         self._buffer = self._direct_read(pos, KeyFile.buffer_size)
-        self._buffer_range_start = pos
+        self._buffer_start = pos
 
     def read(self, size=0):
         pos = self.pos
         end = pos + size
         self.pos = end
-        buf_start = pos - self._buffer_range_start
-        buf_end = end - self._buffer_range_start
+        buf_start = pos - self._buffer_start
+        buf_end = end - self._buffer_start
         if size != 0 and (
             0 <= buf_start < KeyFile.buffer_size and
             0 < buf_end <= KeyFile.buffer_size
