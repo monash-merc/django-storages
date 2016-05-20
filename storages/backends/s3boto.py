@@ -11,6 +11,7 @@ from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.utils.encoding import force_text, smart_str, filepath_to_uri, force_bytes
 
 try:
+    import boto
     from boto import __version__ as boto_version
     from boto.s3.connection import S3Connection, SubdomainCallingFormat
     from boto.exception import S3ResponseError
@@ -304,6 +305,9 @@ class S3BotoStorage(Storage):
     def __init__(self, acl=None, bucket=None, **settings):
         # check if some of the settings we've provided as class attributes
         # need to be overwritten with values passed in here
+        self.init_args = {'acl': acl, 'bucket': bucket}
+        self.init_args.update(settings)
+
         for name, value in settings.items():
             if hasattr(self, name):
                 setattr(self, name, value)
@@ -530,8 +534,13 @@ class S3BotoStorage(Storage):
         if self.concurrency > 1:
             pool = ThreadPool(processes=self.concurrency)
 
-            def _part_upload(mp, part_content, part_num):
-                mp.upload_part_from_file(part_content, part_num=part_num)
+            def _part_upload(mp_id, mp_key_name, part_content, part_num,
+                             **kwargs):
+                self.__init__(**kwargs)
+                mp = boto.s3.multipart.MultiPartUpload(self.bucket)
+                mp.key_name = mp_key_name
+                mp.id = mp_id
+                mp.upload_part_from_file(BytesIO(part_content), part_num=part_num)
 
         pool_workers = []
         try:
@@ -544,12 +553,18 @@ class S3BotoStorage(Storage):
                 content_read = content.read(chunk_size)
                 if len(content_read) == 0:
                     break
-                content_wrapped = BytesIO(content_read)
                 if self.concurrency > 1:
                     pool_workers.append(
-                        pool.apply_async(_part_upload, multipart, content_wrapped, total_parts))
+                        pool.apply_async(
+                            _part_upload,
+                            multipart.id,
+                            multipart.key_name,
+                            content_read,
+                            total_parts,
+                            **self.init_args))
                 else:
-                    multipart.upload_part_from_file(content_wrapped, part_num=total_parts)
+                    multipart.upload_part_from_file(
+                        BytesIO(content_read), part_num=total_parts)
 
                 total_parts += 1
                 if total_parts > 10000:
