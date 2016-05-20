@@ -536,18 +536,19 @@ class S3BotoStorage(Storage):
             use_gevent = True
             greenlets = []
 
-            def _partlet(mp, content, part_num):
+            def _partlet(mp, part_content, part_num):
                 success = False
                 for x in xrange(3):
                     try:
-                        conn = self.connection
-                        bucket = conn.lookup(mp.bucket_name)
+                        # conn = self.connection
+                        # bucket = conn.lookup(mp.bucket_name)
+                        #
+                        # p = boto.s3.multipart.MultiPartUpload(bucket)
+                        # p.id = mp.id
+                        # p.key_name = mp.key_name
 
-                        p = boto.s3.multipart.MultiPartUpload(bucket)
-                        p.id = mp.id
-                        p.key_name = mp.key_name
-
-                        p.upload_part_from_file(BytesIO(content), part_num=part_num, replace=True)
+                        mp.upload_part_from_file(part_content,
+                                                 part_num=part_num, replace=True)
                         success = True
                         break
                     except Exception as part_error:
