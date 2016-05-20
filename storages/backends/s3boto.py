@@ -81,6 +81,8 @@ class KeyFile(object):
     def _direct_read(self, pos, size=0):
         self.key.resp = None
         end = pos + size
+        if end > self.key.size:
+            end = self.key.size
         if size == 0:
             end_str = ''
         else:
@@ -99,6 +101,8 @@ class KeyFile(object):
     def read(self, size=0):
         pos = self.pos
         end = pos + size
+        if end > self.key.size:
+            end = self.key.size
         self.pos = end
         buf_start = pos - self._buffer_start
         buf_end = end - self._buffer_start
