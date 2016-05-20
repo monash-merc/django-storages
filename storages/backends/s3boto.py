@@ -76,7 +76,7 @@ class KeyFile(object):
         self.pos = 0
         self.closed = False
         self._buffer = None
-        self._buffer_range_start, self._buffer_range_end = 0, 0
+        self._buffer_start = 0
 
     def _direct_read(self, pos, size=0):
         self.key.resp = None
@@ -94,20 +94,22 @@ class KeyFile(object):
         end_str = str(end - 1)
         self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos, end_str)})
         self._buffer = self._direct_read(pos, KeyFile.buffer_size)
-        self._buffer_range_start, self._buffer_range_end = pos, end
+        self._buffer_range_start = pos
 
     def read(self, size=0):
         pos = self.pos
         end = pos + size
         self.pos = end
+        buf_start = pos - self._buffer_range_start
+        buf_end = end - self._buffer_range_start
         if size != 0 and (
-            self._buffer_range_start <= pos < self._buffer_range_end and
-            self._buffer_range_start < end <= self._buffer_range_end
+            0 <= buf_start < KeyFile.buffer_size and
+            0 < buf_end <= KeyFile.buffer_size
         ):
-            return self._buffer[pos:size]
+            return self._buffer[buf_start:buf_end]
         if 0 < size < KeyFile.buffer_size:
             self._fill_buffer(pos)
-            return self._buffer.read(size)
+            return self._buffer[buf_start:buf_end]
         return self._direct_read(pos, size)
 
     def seek(self, pos=0):
