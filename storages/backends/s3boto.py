@@ -69,7 +69,7 @@ class KeyFile(object):
     direct reading from the network
     """
 
-    buffer_size = 32 * 1024 * 1024
+    buffer_size = 256 * 1024 * 1024
 
     def __init__(self, key):
         self.key = key
