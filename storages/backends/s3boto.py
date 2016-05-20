@@ -557,11 +557,11 @@ class S3BotoStorage(Storage):
                     pool_workers.append(
                         pool.apply_async(
                             _part_upload,
-                            multipart.id,
-                            multipart.key_name,
-                            content_read,
-                            total_parts,
-                            **self.init_args))
+                            (multipart.id,
+                             multipart.key_name,
+                             content_read,
+                             total_parts),
+                            self.init_args))
                 else:
                     multipart.upload_part_from_file(
                         BytesIO(content_read), part_num=total_parts)
