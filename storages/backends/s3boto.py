@@ -82,7 +82,7 @@ class KeyFile(object):
         self.key.resp = None
         end = pos + size
         if end > self.key.size:
-            end = self.key.size
+            end = self.key.size + 1
         if size == 0:
             end_str = ''
         else:
@@ -92,7 +92,6 @@ class KeyFile(object):
 
     def _fill_buffer(self, pos):
         self.key.resp = None
-        end = pos + KeyFile.buffer_size
         self._buffer = self._direct_read(pos, KeyFile.buffer_size)
         self._buffer_start = pos
 
@@ -100,7 +99,7 @@ class KeyFile(object):
         pos = self.pos
         end = pos + size
         if end > self.key.size:
-            end = self.key.size
+            end = self.key.size + 1
         self.pos = end
         buf_start = pos - self._buffer_start
         buf_end = end - self._buffer_start
