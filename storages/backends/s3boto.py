@@ -3,9 +3,9 @@ import posixpath
 import mimetypes
 from datetime import datetime
 from gzip import GzipFile
+from multiprocessing.pool import ThreadPool
 from tempfile import SpooledTemporaryFile
 
-import boto
 from django.core.files.base import File
 from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
 from django.utils.encoding import force_text, smart_str, filepath_to_uri, force_bytes
@@ -28,15 +28,6 @@ boto_version_info = tuple([int(i) for i in boto_version.split('-')[0].split('.')
 if boto_version_info[:2] < (2, 32):
     raise ImproperlyConfigured("The installed Boto library must be 2.32 or "
                                "higher.\nSee https://github.com/boto/boto")
-
-try:
-    import gevent.monkey
-    gevent.monkey.patch_all()
-    import gevent
-    import gevent.pool
-    gevent_available = True
-except ImportError:
-    gevent_available = False
 
 
 def safe_join(base, *paths):
@@ -531,24 +522,15 @@ class S3BotoStorage(Storage):
         total_parts = 1
 
         use_gevent = False
-        if self.concurrency > 1 and gevent_available:
-            pool = gevent.pool.Pool(self.concurrency)
-            use_gevent = True
-            greenlets = []
+        if self.concurrency > 1:
+            pool = ThreadPool(processes=self.concurrency)
 
-            def _partlet(mp, part_content, part_num):
+            def _part_upload(part_content, part_num):
                 success = False
                 for x in xrange(3):
                     try:
-                        # conn = self.connection
-                        # bucket = conn.lookup(mp.bucket_name)
-                        #
-                        # p = boto.s3.multipart.MultiPartUpload(bucket)
-                        # p.id = mp.id
-                        # p.key_name = mp.key_name
-
-                        mp.upload_part_from_file(part_content,
-                                                 part_num=part_num, replace=True)
+                        multipart.upload_part_from_file(
+                            part_content, part_num=part_num, replace=True)
                         success = True
                         break
                     except Exception as part_error:
@@ -562,9 +544,8 @@ class S3BotoStorage(Storage):
                 if len(content_read) == 0:
                     break
                 content_wrapped = BytesIO(content_read)
-                if use_gevent:
-                    greenlets.append(
-                        pool.spawn(_partlet, multipart, content_wrapped, total_parts))
+                if self.concurrency > 1:
+                    pool.apply_async(_partlet, content_wrapped, total_parts)
                 else:
                     multipart.upload_part_from_file(content_wrapped, part_num=total_parts)
 
@@ -573,7 +554,9 @@ class S3BotoStorage(Storage):
                     raise Exception("multipart S3 upload, too many parts")
                 if total_parts % part_step == 0:
                     chunk_size = int(chunk_multiplier * chunk_size)
-            gevent.joinall(greenlets)
+            if self.concurrency > 1:
+                pool.close()
+                pool.join()
             multipart.complete_upload()
         except Exception as e:
             multipart.cancel_upload()
