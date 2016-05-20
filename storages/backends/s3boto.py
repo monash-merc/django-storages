@@ -116,6 +116,7 @@ class KeyFile(object):
 
     def close(self):
         self.key.close()
+        self.closed = True
 
 
 @deconstructible
@@ -529,27 +530,24 @@ class S3BotoStorage(Storage):
         if self.concurrency > 1:
             pool = ThreadPool(processes=self.concurrency)
 
-            def _part_upload(part_content, part_num):
-                success = False
-                for x in xrange(3):
-                    try:
-                        multipart.upload_part_from_file(
-                            part_content, part_num=part_num, replace=True)
-                        success = True
-                        break
-                    except Exception as part_error:
-                        print "Error in multipart part, %s" % str(part_error)
+            def _part_upload(mp, part_content, part_num):
+                mp.upload_part_from_file(part_content, part_num=part_num)
 
-                assert success, "Part failed, %d" % part_num
-
+        pool_workers = []
         try:
             while True:
+                if len(pool_workers) > self.concurrency * 2:
+                    for worker in pool_workers:
+                        if worker.ready():
+                            pool_workers.remove(worker)
+                    continue
                 content_read = content.read(chunk_size)
                 if len(content_read) == 0:
                     break
                 content_wrapped = BytesIO(content_read)
                 if self.concurrency > 1:
-                    pool.apply_async(_part_upload, content_wrapped, total_parts)
+                    pool_workers.append(
+                        pool.apply_async(_part_upload, multipart, content_wrapped, total_parts))
                 else:
                     multipart.upload_part_from_file(content_wrapped, part_num=total_parts)
 
