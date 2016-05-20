@@ -75,7 +75,7 @@ class KeyFile(object):
         self.key = key
         self.pos = 0
         self.closed = False
-        self._buffer = None
+        self._buffer = ''
         self._buffer_start = 0
 
     def _direct_read(self, pos, size=0):
@@ -102,10 +102,9 @@ class KeyFile(object):
         self.pos = end
         buf_start = pos - self._buffer_start
         buf_end = end - self._buffer_start
-        try:
-            return self._buffer[buf_start:buf_end]
-        except IndexError:
-            pass
+        data = self._buffer[buf_start:buf_end]
+        if len(data) == size:
+            return data
         if 0 < size < KeyFile.buffer_size:
             self._fill_buffer(pos)
             return self._buffer[0:size]
@@ -113,7 +112,7 @@ class KeyFile(object):
 
     def seek(self, pos=0):
         self.pos = pos
-        if not (self._buffer_start < pos < self._buffer_start + KeyFile.buffer_size):
+        if not (self._buffer_start <= pos < self._buffer_start + KeyFile.buffer_size):
             self._fill_buffer(pos)
         return
 
