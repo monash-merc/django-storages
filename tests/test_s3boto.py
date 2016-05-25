@@ -1,4 +1,7 @@
 import unittest
+
+from storages.backends.s3boto import S3BotoStorageFile, KeyFile
+
 try:
     from unittest import mock
 except ImportError:  # Python 3.2 and below
@@ -14,16 +17,18 @@ from boto.exception import S3ResponseError
 from boto.s3.key import Key
 from boto.utils import parse_ts, ISO8601
 
-from storages.compat import urlparse
+from storages.compat import BytesIO, urlparse
 from storages.backends import s3boto
 
 __all__ = (
     'SafeJoinTest',
     'S3BotoStorageTests',
+    'S3BotoStorageFileTests',
 )
 
 
 class S3BotoTestCase(TestCase):
+
     @mock.patch('storages.backends.s3boto.S3Connection')
     def setUp(self, S3Connection):
         self.storage = s3boto.S3BotoStorage()
@@ -338,3 +343,52 @@ class S3BotoStorageTests(S3BotoTestCase):
         self.storage.file_overwrite = False
         self.storage.exists = lambda name: False
         self.storage.get_available_name('gogogo', max_length=255)
+
+
+class S3BotoStorageFileTests(S3BotoTestCase):
+
+    def setUp(self):
+        super(S3BotoStorageFileTests, self).setUp()
+        self.content = '1234567890123456789012345678901234567890'
+        self.s3_file = S3BotoStorageFile(
+            'test-file.txt', 'r', self.storage, buffer_size=8)
+
+    @unittest.skip  # need to reconsider this class
+    def test_buffered_read(self):
+        self.assertEqual(self.s3_file.read(), self.content)
+
+
+class KeyFileTests(S3BotoTestCase):
+
+    @mock.patch('storages.backends.s3boto.S3Connection')
+    @mock.patch('storages.backends.s3boto.S3Key')
+    def setUp(self, S3Connection, S3Key):
+        KeyFile.buffer_size = 16
+        super(KeyFileTests, self).setUp()
+        self.content = '1234567891123456789212345678931234567894'
+        self.storage.save('test-file', BytesIO(self.content))
+        self.s3_file = self.storage.open('test-file', 'r')
+        self.key_file = self.s3_file.file
+
+        def open_read(headers):
+            pos, end = headers['Range'].split('=')[1].split('-')
+            self.reader_pos = int(pos)-1
+            self.reader_end = int(end)
+
+        def read(size):
+            fake_file = BytesIO(self.content)
+            fake_file.seek(self.reader_pos)
+            return fake_file.read(size)
+
+        self.key_file.key.size = len(self.content)
+        self.key_file.key.open_read = open_read
+        self.key_file.key.read = read
+
+    def test_read(self):
+        for i in range(len(self.content)/8+1):
+            self.assertEqual(self.content[i*8:(i+1)*8], self.key_file.read(8))
+        self.assertEqual(self.reader_end, len(self.content))
+        self.key_file.seek(3)
+        for i in range((len(self.content)-3)/8+1):
+            self.assertEqual(self.content[i*8+3:(i+1)*8+3], self.key_file.read(8))
+        self.assertEqual(self.reader_end, len(self.content))

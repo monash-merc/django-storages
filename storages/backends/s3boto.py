@@ -67,27 +67,29 @@ def safe_join(base, *paths):
 class KeyFile(object):
     """
     direct reading from the network
+    a buffer of buffer_size is read in one go if less than that is
+    requested
     """
 
     buffer_size = 256 * 1024 * 1024
 
     def __init__(self, key):
-        self.key = key
-        self.pos = 0
+        self.key = key  # boto Key
+        self.pos = 0  # zero indexed position in file
         self.closed = False
         self._buffer = ''
-        self._buffer_start = 0
+        self._buffer_start = 0  # zero indexed file position where buffer starts
 
     def _direct_read(self, pos, size=0):
-        self.key.resp = None
-        end = pos + size
-        if end > self.key.size:
-            end = self.key.size + 1
+        self.key.resp = None  # reset connection parameters for open_read to
+                              # be able to set headers
+        end = pos + size  # one-indexed end of read, position plus read size
+        end = min(end, self.key.size)  # upper limit is size of file
         if size == 0:
-            end_str = ''
+            end_str = ''  # header string for an open read
         else:
-            end_str = str(end - 1)
-        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos, end_str)})
+            end_str = str(end)  # one-indexed end
+        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos + 1, end_str)})
         return self.key.read(size)
 
     def _fill_buffer(self, pos):
@@ -96,20 +98,19 @@ class KeyFile(object):
         self._buffer_start = pos
 
     def read(self, size=0):
-        pos = self.pos
-        end = pos + size
-        if end > self.key.size:
-            end = self.key.size + 1
-        self.pos = end
-        buf_start = pos - self._buffer_start
-        buf_end = end - self._buffer_start
-        data = self._buffer[buf_start:buf_end]
-        if len(data) == size:
+        pos = self.pos  # zero-indexed position in file
+        end = pos + size  # one-indexed end
+        end = min(end, self.key.size)
+        self.pos = end  # new zero-indexed position after read
+        buf_start = pos - self._buffer_start  # zero-indexed buffer position
+        buf_end = end - self._buffer_start  # one-indexed buffer end
+        data = self._buffer[buf_start:buf_end]  # slice of buffer
+        if len(data) == size:  # if slice satisfies request, return
             return data
-        if 0 < size < KeyFile.buffer_size:
+        if 0 < size <= KeyFile.buffer_size:  # if new buffer can satisfy request, buffer
             self._fill_buffer(pos)
             return self._buffer[0:size]
-        return self._direct_read(pos, size)
+        return self._direct_read(pos, size)  # if request lies outside buffer-size, don't buffer
 
     def seek(self, pos=0):
         self.pos = pos
@@ -169,7 +170,7 @@ class S3BotoStorageFile(File):
 
     def _get_file(self):
         if self._file is None:
-            if 'r' in self._mode:
+            if 'r' in self._mode and not self.key.content_encoding == 'gzip':
                 self._file = KeyFile(self.key)
             else:
                 self._file = SpooledTemporaryFile(
