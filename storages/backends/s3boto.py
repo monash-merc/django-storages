@@ -98,6 +98,8 @@ class KeyFile(object):
         self._buffer_start = pos
 
     def read(self, size=0):
+        if self.pos == self.key.size:
+            return ''
         pos = self.pos  # zero-indexed position in file
         end = pos + size  # one-indexed end
         end = min(end, self.key.size)
@@ -105,7 +107,7 @@ class KeyFile(object):
         buf_start = pos - self._buffer_start  # zero-indexed buffer position
         buf_end = end - self._buffer_start  # one-indexed buffer end
         data = self._buffer[buf_start:buf_end]  # slice of buffer
-        if len(data) == size:  # if slice satisfies request, return
+        if size != 0 and len(data) == size:  # if slice satisfies request, return
             return data
         if 0 < size <= KeyFile.buffer_size:  # if new buffer can satisfy request, buffer
             self._fill_buffer(pos)
@@ -113,7 +115,7 @@ class KeyFile(object):
         return self._direct_read(pos, size)  # if request lies outside buffer-size, don't buffer
 
     def seek(self, pos=0):
-        self.pos = pos
+        self.pos = min(pos, self.key.size)
         if not (self._buffer_start <= pos < self._buffer_start + KeyFile.buffer_size):
             self._fill_buffer(pos)
         return
