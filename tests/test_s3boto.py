@@ -373,8 +373,8 @@ class KeyFileTests(S3BotoTestCase):
         def open_read(headers):
             pos, end = headers['Range'].split('=')[1].split('-')
             self.assertLess(int(pos), int(end))
-            self.reader_pos = int(pos)-1
-            self.reader_end = int(end)
+            self.reader_pos = int(pos)
+            self.reader_end = int(end) + 1  # python ends are one-indexed
 
         def read(size):
             fake_file = BytesIO(self.content)

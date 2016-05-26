@@ -88,8 +88,8 @@ class KeyFile(object):
         if size == 0:
             end_str = ''  # header string for an open read
         else:
-            end_str = str(end)  # one-indexed end
-        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos + 1, end_str)})
+            end_str = str(end - 1)  # zero-indexed end
+        self.key.open_read(headers={'Range': 'bytes=%d-%s' % (pos, end_str)})
         return self.key.read(size)
 
     def _fill_buffer(self, pos):
